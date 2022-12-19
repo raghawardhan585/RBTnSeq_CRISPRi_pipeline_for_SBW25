@@ -1,0 +1,300 @@
+```
+---
+title: "CCD"
+author: "William C Nelson"
+date: "3/28/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+Load necessary packages
+```{r}
+library(pheatmap)
+library(ISLR)
+library(ggplot2)
+library(GGally)
+library(ggfortify)
+library(umap)
+library(dplyr)
+library(reshape2)
+library(stringr) # for str_detect()
+```
+Load in the image from the morgannprice.org project page
+```{r}
+
+load("/Users/shara/Desktop/Mission_Sakura/Phase_I_SBW25_RbTnSeq_FirstStrainRecommendations/RbTnSeq_data/other_data/fit.image")
+
+```
+Get the unique experimental conditions
+```{r}
+# Get the unique conditions 
+conditions<-unique(c(unique(expsUsed$Condition_1), unique(expsUsed$Condition_2), unique(expsUsed$Condition_3) ))
+conditions<-conditions[!conditions %in% c("", NA)]
+conditions<-conditions[!str_detect(conditions,"Soil")]
+# Get the unique pH
+pHvals<-unique(expsUsed$pH)
+pHvals<-pHvals[!pHvals %in% c("", NA)]
+# Get the unique Temperatures
+Tinput<-unique(expsUsed$Temperature)
+Tinput<-Tinput[!Tinput %in% c("", NA)]
+# Creating a nested list of all the conditions
+```
+all_criteria_names <- c("compound","pH","Temperature")
+all_criteria <-list()
+all_criteria[["compound"]] <- conditions
+all_criteria[["pH"]] <- pHvals
+all_criteria[["Temperature"]] <- Tinput
+```
+all_criteria<- list("Condition" = conditions, "pH" = pHvals, "Temperature" = Tinput)
+
+```
+Iterate through all the conditions - This is not working!!!
+```{r}
+for (parameter in names(all_criteria))
+{
+  for (i in 1:length(all_criteria[[parameter]]))
+  {
+    print(paste('i=',i))
+    # --------------------------------------------------------------------------
+    # Value of the experimental condition is obtained
+    param_val = all_criteria[[parameter]][i]
+    # --------------------------------------------------------------------------
+    # All the corresponding experiment samples corresponding to the parameter is obtained
+    if (parameter == "Condition")
+    {
+      # Search across Condition_1, Condition_2 and Condition_3
+      Exps<-expsUsed[which((expsUsed$Condition_1 ==param_val) | (expsUsed$Condition_2==param_val) | (expsUsed$Condition_3==param_val)),]
+    }else
+    {
+      Exps<-expsUsed[which(expsUsed[parameter] == param_val),]
+    }
+    # --------------------------------------------------------------------------
+    # The number of experiments should be greater than 20 to proceed
+    if (nrow(Exps)<3){next} #-------------------------------------------------------------has been commented-------------------------------------------------------------------------------------------------------------------------
+    # --------------------------------------------------------------------------
+    # Conditional Cofitness Analysis
+    condCofit<-cor(t(fit$lrn[,fit$q$u & names(fit$lrn) %in% Exps$name]))
+    # Subtract the identity matrix to remove the diagonal self correlation entries which are basically 1
+    condCofit<- condCofit - diag(dim(condCofit)[1])
+    # Need to figue out what "genCofit" means -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    genCofit<-matrix(0,dim(condCofit)[1],dim(condCofit)[2])
+    CCD<-condCofit - genCofit
+    condCofit_cutoff = 1.0
+    repeat{
+      condCofit_cutoff<-condCofit_cutoff - 0.1
+      if(condCofit_cutoff<0.5){
+      break
+      }
+      screen<- which((abs(condCofit) >= condCofit_cutoff), arr.ind=T)
+      if(nrow(screen)<12000 & nrow(screen)>8000){
+        break
+      }
+    }
+    fitGenes_cofit<-unique(c(fit$g[screen[, "col"]], fit$g[screen[, "row"]]))
+    # --------------------------------------------------------------------------
+    # Find the average log ratio normalized(lrn) and average t-statistic
+    if(sum(fit$q$u & colnames(fit$lrn) %in% Exps$name)<3){
+    next
+    }
+    avgLRN<-apply(fit$lrn[,(fit$q$u & colnames(fit$lrn) %in% Exps$name)], 1, mean)
+    avgT<-apply(fit$t[,(fit$q$u & colnames(fit$lrn) %in% Exps$name)], 1, mean)
+    # --------------------------------------------------------------------------
+    # Filter the genes based on criteria
+    # Condition 1 : Genes should have a condCofit > condCofit_cutoff
+    # Condition 2 : avgLRN(gene) > 2
+    # Condition 3 : avgT(gene) > 5
+    fitGenes<-fit$g[abs(avgLRN) >= 2 & abs(avgT) >= 5]
+    fitGenes<-fitGenes[fitGenes %in% fitGenes_cofit]
+    # --------------------------------------------------------------------------
+    # Print the summary of what happened in the current run
+    print('++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
+    if (parameter == "Condition")
+    {
+      print(paste('Condition : ', param_val))
+      condition_name = paste("compound:",param_val,sep="")
+    }
+    else
+    {
+      print(paste(parameter, ':', param_val))
+      condition_name = paste(parameter,":",param_val,sep="")
+    }
+    print(paste('Number of experiments :', dim(Exps)[0]))
+    print(paste('Number of identified genes :', length(fitGenes)))
+    write.table(fitGenes,paste('/Users/Shara/Box/YeungLabUCSBShare/Shara/_Project_Naruto/Phase_I_SBW25_RbTnSeq_FirstStrainRecommendations/gene_predictions/',condition_name,".csv",sep=""),sep='\t', col.names=T)
+  }
+}
+print('++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
+
+
+# I'm supposedly done here
+
+# condition_name --- to be defined prior to exporting the data
+# write.table(fitGenes,paste('/Users/Shara/Box/YeungLabUCSBShare/Shara/_Project_Naruto/Phase_I_SBW25_RbTnSeq_FirstStrainRecommendations/gene_predictions/',condition_name,".csv",sep=""),sep='\t', col.names=T)
+
+
+
+
+
+#===============================================================================
+#===============================================================================
+#===============================================================================
+
+i=10
+param_val = all_criteria[[parameter]][i]
+Exps<-expsUsed[which(expsUsed$Condition_1 ==param_val) || which(expsUsed$Condition_2==param_val) || which(expsUsed$Condition_3==param_val),]
+dim(Exps)
+#===============================================================================
+#===============================================================================
+```
+Load the experiments
+```{r}
+allExpsUsed=read.csv(file="expsUsed.csv")
+expsUsed=expsUsed[expsUsed$Date_pool_expt_started=="September 1, 2021",]
+```
+
+Define necessary variables
+```{r}
+condition="Sodium Chloride"
+#pH=8.5
+#temp=8
+#condition = "L-Glutamine"
+#condition = "Betaine"
+#condition = "Methyl 3-(4-hydroxyphenyl)propionate" # not enough experiments.
+#condition = "D,L-Malic Acid"
+#condition = "p-Coumaric acid"
+```
+
+Pull the experiments for the specific condition
+```{r}
+Exps<-expsUsed[expsUsed$Condition_3 == condition,]
+#Exps<-expsUsed[expsUsed$Condition_1 == condition,]
+#Exps<-expsUsed[expsUsed$Temperature == temp,]
+#Exps<-expsUsed[expsUsed$pH == pH,]
+nrow(Exps)
+```
+That number above should be higher than 20 to continue.
+
+Filter for CCD results for genes with good fitness values under the specific
+condition.
+```{r}
+# calculate the avg LRN  and t for each gene across the target condition
+avgLRN<-apply(fit$lrn[,(fit$q$u & colnames(fit$lrn) %in% Exps$name)], 1, mean)
+avgT<-apply(fit$t[,(fit$q$u & colnames(fit$lrn) %in% Exps$name)], 1, mean)
+# select only those genes that beat the cutoffs
+fitGenes<-fit$g[abs(avgLRN) >= 2 & abs(avgT) >= 5]
+length(fitGenes)
+```
+The number above should be the number of genes showing significant fitness effects
+under the give growth condition (|LRN|>2, |t|>5)
+
+Calculate the conditional cofitness
+```{r}
+condCofit<-cor(t(fit$lrn[,fit$q$u & names(fit$lrn) %in% Exps$name]))
+hist(condCofit, breaks=200)
+quantile(condCofit, probs=c(0.001, 0.25, 0.5, 0.75, 0.999))
+```
+If this curve is flat, that means there is not enough data to distinguish between conditions, and going further may not be fruitful.
+
+Calculate the cofitness difference
+```{r}
+CCD<-condCofit - genCofit
+hist(CCD, breaks=200)
+hist(CCD/max(abs(CCD)), breaks=200) # this histogram is more comparable to the one above.
+```
+
+Screen for the best/beat cutoff (the same gene pairs screened for their 
+specific condition cofitness)
+```{r}
+# find the best cofitness value for each gene (that is not 1, which should be the self-cofitness)
+#bestcofit<-apply(condCofit, 1, function(x) min(-abs(x[x!=1])))
+# find which pairs have either an absolute cofitness >0.7 or are the best cofitness value
+#screen<- which(-abs(condCofit) == bestcofit | (-abs(condCofit) <= -0.7 & condCofit != 1), arr.ind=T)
+screen<- which((-abs(condCofit) <= -0.7 & condCofit != 1), arr.ind=T)
+#screen<- which((-abs(CCD/max(abs(CCD))) <= -0.7), arr.ind=T)
+#screen<- which((-abs(condCofit) <= -0.9 & condCofit != 1), arr.ind=T)
+nrow(screen)
+```
+What is a good number for the number of screen rows? 10k seems reasonable
+
+```{r}
+out = matrix(nrow=0, ncol=11)
+for (i in 1:nrow(screen)) {
+  # make sure we're only pulling one comparison
+  if (screen[i,"row"] > screen[i, "col"]) {
+    targetGene<-fit$g[screen[i, "col"]]
+    hitGene<-fit$g[screen[i, "row"]]
+    CCFVal<-condCofit[screen[i,"row"], screen[i, "col"]]
+    CCDVal<-CCD[screen[i,"row"], screen[i, "col"]]
+    GCFVal<-genCofit[screen[i,"row"], screen[i, "col"]]
+    targetLRNVal<-avgLRN[screen[i, "col"]]
+    hitLRNVal<-avgLRN[screen[i,"row"]]
+    targetTVal<-avgT[screen[i, "col"]]
+    hitTVal<-avgT[screen[i,"row"]]
+    out<-rbind(out, c(targetGene, hitGene, CCFVal, GCFVal, CCDVal, targetLRNVal, targetTVal, hitLRNVal, hitTVal, SBW25[targetGene, 'description'], SBW25[hitGene,'description']))
+  }
+}
+# because I haven't learned how to autotype dataframes...
+out<-as.data.frame(out)
+out$V3<-as.numeric(out$V3)
+out$V4<-as.numeric(out$V4)
+out$V5<-as.numeric(out$V5)
+colnames(out)<-c("gene1", "gene2","condCofit", "genCofit", "CCD", "gene1LRN", "gene1t", "gene2LRN", "gene2t", "gene1desc", "gene2desc")
+```
+
+
+```{r}
+# grab any rows from CCD out which have one of the fitGenes as either gene
+fitGenesCCDout<-out[out$gene1 %in% fitGenes | out$gene2 %in% fitGenes,]
+
+# this is our output
+write.csv(fitGenesCCDout, file=paste(condition,"_CCD.csv"), quote=F)
+
+pdf(file=paste(condition, "_CCD.pdf"))
+# look at the heatmap for those pairs where the CCD beats cutoff
+pheatmap(fitGenesCCDout[,3:5], cluster_cols=F, cellwidth=25, show_rownames=F)
+#pheatmap(fitGenesCCDout[abs(fitGenesCCDout[,5])>0.7,3:5], cluster_cols=F, cell_height=3, cell_width=20, show_rownames=F)
+dev.off()
+```
+We want output that is every gene that confers fitness above cutoffs (fitGenes) and any CCD that beats cutoff (what is cutoff?). Return a number of relationships = 1/1000 the total matrix (so ~30k)
+Look at the 0.001 and .999 quantiles of condCofit and averag their abs vals. If number is <0.7, use 0.7.
+
+```{r}
+out = matrix(nrow=0, ncol=11)
+fitGeneRows<-which(row.names(CCD) %in% fitGenes)
+thisCutoff=0.7
+for (rowID in fitGeneRows) {
+  screenRows<-which(abs(condCofit[rowID,]) > thisCutoff)
+  for (colID in screenRows) {
+    targetGene<-fit$g[rowID]
+    hitGene<-fit$g[colID]
+    CCFVal<-condCofit[rowID,colID]
+    CCDVal<-CCD[rowID, colID]
+    GCFVal<-genCofit[rowID, colID]
+    targetLRNVal<-avgLRN[rowID]
+    hitLRNVal<-avgLRN[colID]
+    targetTVal<-avgT[rowID]
+    hitTVal<-avgT[colID]
+    out<-rbind(out, c(targetGene, hitGene, CCFVal, GCFVal, CCDVal, targetLRNVal, targetTVal, hitLRNVal, hitTVal, SBW25[targetGene, 'description'], SBW25[hitGene,'description']))
+
+  }
+}
+out<-as.data.frame(out)
+out[,3:9]<-sapply(out[,3:9],as.numeric)
+colnames(out)<-c("gene1", "gene2","condCofit", "genCofit", "CCD", "gene1LRN", "gene1t", "gene2LRN", "gene2t", "gene1desc", "gene2desc")
+
+# Choose the right output file name formatting
+write.csv(out, file=paste(condition,"_CCD2.csv"), quote=F)
+#write.csv(out[(abs(out$CCD)>=thisCutoff/3) | (out$genCofit==1),], file=paste(temp,"C_CCD2.csv"), quote=F)
+#write.csv(out[(abs(out$CCD)>=thisCutoff/3) | (out$genCofit==1),], file=paste("pH", pH,"_CCD2.csv"), quote=F)
+
+#pdf(file=paste(condition, "_CCD2.pdf"))
+# look at the heatmap for those pairs where the CCD beats cutoff
+pheatmap(out[,3:5], cluster_cols=F, cellwidth=25, show_rownames=F)
+#pheatmap(fitGenesCCDout[abs(fitGenesCCDout[,5])>0.7,3:5], cluster_cols=F, cell_height=3, cell_width=20, show_rownames=F)
+#dev.off()
+
+```
+
